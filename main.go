@@ -1,15 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"time"
 
 	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/gridfs"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
@@ -32,7 +36,10 @@ func close(client *mongo.Client, ctx context.Context, cancel context.CancelFunc)
 // resource associated with it.
 func connect(uri string) (*mongo.Client, context.Context, context.CancelFunc, error) {
 
-	clientOptions := options.Client().ApplyURI(os.Getenv("MONGODB_URI"))
+	clientOptions := options.Client()
+	clientOptions.ApplyURI(uri)
+	// Restrain the max connections in the db
+	// clientOptions.SetMaxPoolSize(5)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 
@@ -87,6 +94,77 @@ func insertMany(client *mongo.Client, ctx context.Context, dataBase, col string,
 	return result, err
 }
 
+func UploadFile(file, filename string) {
+
+	data, err := ioutil.ReadFile(file)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	conn, _, _, err := connect(os.Getenv("MONGODB_URI"))
+	if err != nil {
+		panic(err)
+	}
+
+	bucket, err := gridfs.NewBucket(
+		conn.Database("myfiles"),
+	)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+	uploadStream, err := bucket.OpenUploadStream(
+		filename,
+	)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	defer uploadStream.Close()
+
+	fileSize, err := uploadStream.Write(data)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+	log.Printf("Write file to DB was successful. File size: %d M\n", fileSize)
+}
+
+func DownloadFile(fileName string) {
+	conn, ctx, _, err := connect(os.Getenv("MONGODB_URI"))
+	if err != nil {
+		panic(err)
+	}
+
+	// For CRUD operations, here is an example
+	db := conn.Database("myfiles")
+	fsFiles := db.Collection("fs.files")
+	var results bson.M
+	err = fsFiles.FindOne(ctx, bson.M{}).Decode(&results)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// you can print out the results
+	fmt.Println(results)
+
+	bucket, err := gridfs.NewBucket(
+		db,
+	)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	var buf bytes.Buffer
+	dStream, err := bucket.DownloadToStreamByName(fileName, &buf)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("File size to download: %v\n", dStream)
+	ioutil.WriteFile(fileName, buf.Bytes(), 0600)
+
+}
+
 func init() {
 
 	err := godotenv.Load(".env")
@@ -100,7 +178,7 @@ func main() {
 
 	// Get Client, Context, CancelFunc and
 	// err from connect method.
-	client, ctx, cancel, err := connect(os.Getenv("DATABASE"))
+	client, ctx, cancel, err := connect(os.Getenv("MONGODB_URI"))
 	if err != nil {
 		panic(err)
 	}
@@ -182,4 +260,11 @@ func main() {
 	for id := range insertManyResult.InsertedIDs {
 		fmt.Println(id)
 	}
+
+	// Get os.Args values
+	file := "./images/IMG1.jpg" //os.Args[1] = testfile.zip
+	filename := path.Base(file)
+	// UploadFile(file, filename)
+	// Uncomment the below line and comment the UploadFile above this line to download the file
+	DownloadFile(filename)
 }
