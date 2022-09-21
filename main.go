@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -94,7 +95,7 @@ func insertMany(client *mongo.Client, ctx context.Context, dataBase, col string,
 	return result, err
 }
 
-func UploadFile(file, filename string) {
+func UploadFile(file, filename string, database string) {
 
 	data, err := ioutil.ReadFile(file)
 	if err != nil {
@@ -107,7 +108,7 @@ func UploadFile(file, filename string) {
 	}
 
 	bucket, err := gridfs.NewBucket(
-		conn.Database("myfiles"),
+		conn.Database(database),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -130,14 +131,14 @@ func UploadFile(file, filename string) {
 	log.Printf("Write file to DB was successful. File size: %d M\n", fileSize)
 }
 
-func DownloadFile(fileName string) {
+func DownloadFile(fileName string, database string) {
 	conn, ctx, _, err := connect(os.Getenv("MONGODB_URI"))
 	if err != nil {
 		panic(err)
 	}
 
 	// For CRUD operations, here is an example
-	db := conn.Database("myfiles")
+	db := conn.Database(database)
 	fsFiles := db.Collection("fs.files")
 	var results bson.M
 	err = fsFiles.FindOne(ctx, bson.M{}).Decode(&results)
@@ -192,13 +193,34 @@ func main() {
 
 	// Create  a object of type interface to  store
 	// the bson values, that  we are inserting into database.
+	file, err := os.Open("./tables/initialListTable.txt")
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer file.Close()
+
+	dat, err := ioutil.ReadAll(file)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	list := strings.Replace(string(dat), "['ID', 'Nome', 'Sexo', 'Cabelo', 'Acessorio', 'Imagem', 'Email'], ", "", 1)
+	list = strings.Replace(list, "'", "", -1)
+
+	a := list[2 : len(list)-3]
+	arr := strings.Split(a, ", ")
+
+	var user []string
+
+	user = append(user, arr...)
+
 	var document interface{}
 
 	document = bson.D{
-		{"rollNo", 175},
-		{"maths", 80},
-		{"science", 90},
-		{"computer", 95},
+		{"rollNo", user[0]},
+		{"maths", user[1]},
+		{"science", user[2]},
+		{"computer", user[3]},
 	}
 
 	// insertOne accepts client , context, database
@@ -206,8 +228,8 @@ func main() {
 	// will be inserted into the  collection.
 	// insertOne returns an error and a result of
 	// insert in a single document into the collection.
-	insertOneResult, err := insertOne(client, ctx, "notas",
-		"marks", document)
+	insertOneResult, err := insertOne(client, ctx, "Users",
+		"attributes", document)
 
 	// handle the error
 	if err != nil {
@@ -222,49 +244,49 @@ func main() {
 	// Now will be inserting multiple documents into
 	// the collection. create  a object of type slice
 	// of interface to store multiple  documents
-	var documents []interface{}
+	// var documents []interface{}
 
-	// Storing into interface list.
-	documents = []interface{}{
-		bson.D{
-			{"rollNo", 153},
-			{"maths", 65},
-			{"science", 59},
-			{"computer", 55},
-		},
-		bson.D{
-			{"rollNo", 162},
-			{"maths", 86},
-			{"science", 80},
-			{"computer", 69},
-		},
-	}
+	// // Storing into interface list.
+	// documents = []interface{}{
+	// 	bson.D{
+	// 		{"rollNo", 153},
+	// 		{"maths", 65},
+	// 		{"science", 59},
+	// 		{"computer", 55},
+	// 	},
+	// 	bson.D{
+	// 		{"rollNo", 162},
+	// 		{"maths", 86},
+	// 		{"science", 80},
+	// 		{"computer", 69},
+	// 	},
+	// }
 
-	// insertMany insert a list of documents into
-	// the collection. insertMany accepts client,
-	// context, database name collection name
-	// and slice of interface. returns error
-	// if any and result of multi document insertion.
-	insertManyResult, err := insertMany(client, ctx, "notas",
-		"marks", documents)
+	// // insertMany insert a list of documents into
+	// // the collection. insertMany accepts client,
+	// // context, database name collection name
+	// // and slice of interface. returns error
+	// // if any and result of multi document insertion.
+	// insertManyResult, err := insertMany(client, ctx, "notas",
+	// 	"marks", documents)
 
-	// handle the error
-	if err != nil {
-		panic(err)
-	}
+	// // handle the error
+	// if err != nil {
+	// 	panic(err)
+	// }
 
-	fmt.Println("Result of InsertMany")
+	// fmt.Println("Result of InsertMany")
 
-	// print the insertion ids of the multiple
-	// documents, if they are inserted.
-	for id := range insertManyResult.InsertedIDs {
-		fmt.Println(id)
-	}
+	// // print the insertion ids of the multiple
+	// // documents, if they are inserted.
+	// for id := range insertManyResult.InsertedIDs {
+	// 	fmt.Println(id)
+	// }
 
 	// Get os.Args values
-	file := "./images/IMG1.jpg" //os.Args[1] = testfile.zip
-	filename := path.Base(file)
-	// UploadFile(file, filename)
+	file1 := "./images/IMG1.jpg" //os.Args[1] = testfile.zip
+	filename := path.Base(file1)
+	UploadFile(file1, filename, "Users")
 	// Uncomment the below line and comment the UploadFile above this line to download the file
-	DownloadFile(filename)
+	//DownloadFile(filename, "Users")
 }
